@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vessens - Sales Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #0d0d0d; color: #f5f5f5; font-family: 'Cairo', sans-serif; }
+        .theme-card { background-color: #161616; border: 1px solid #333333; }
+        .gold-text { color: #d4af37; }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div id="login-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-black px-4">
+        <div class="w-full max-w-sm rounded-2xl border border-gray-800 bg-[#161616] p-6 shadow-2xl">
+            <h2 class="text-xl font-bold gold-text mb-2">🔒 Dashboard Login</h2>
+            <p class="text-sm opacity-60 mb-5">Enter the dashboard password to continue.</p>
+            <input id="password-input" type="password" autocomplete="current-password" placeholder="Password" class="w-full rounded-xl border border-gray-700 bg-black px-4 py-3 text-white outline-none focus:border-yellow-500">
+            <p id="login-error" class="hidden text-red-400 text-sm mt-3">Wrong password.</p>
+            <button id="login-button" type="button" class="w-full mt-4 rounded-xl bg-yellow-600 hover:bg-yellow-500 px-4 py-3 font-bold text-black transition-colors">Login</button>
+            <a href="index.html" class="block w-full mt-3 rounded-xl border border-gray-700 bg-gray-900 hover:bg-gray-800 px-4 py-3 text-center font-bold text-white transition-colors">← Back to Store</a>
+        </div>
+    </div>
+
+    <div id="dashboard-content" class="hidden max-w-7xl mx-auto space-y-6">
+        <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-800 pb-4">
+            <h1 class="text-2xl sm:text-3xl font-bold gold-text">📊 Vessens Sales Dashboard</h1>
+            <div class="flex gap-2">
+                <button onclick="resetOrders()" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-xl text-sm font-bold transition-colors">🗑️ Reset Orders</button>
+                <a href="index.html" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-xl text-sm font-bold">← Back to Store</a>
+            </div>
+        </header>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div class="theme-card p-6 rounded-2xl shadow-xl">
+                <p class="text-sm opacity-70">Total Revenue</p>
+                <h3 id="total-revenue" class="text-3xl font-bold gold-text mt-2">0 EGP</h3>
+            </div>
+            <div class="theme-card p-6 rounded-2xl shadow-xl">
+                <p class="text-sm opacity-70">Total Orders</p>
+                <h3 id="total-orders" class="text-3xl font-bold text-white mt-2">0</h3>
+            </div>
+        </div>
+
+        <!-- Orders Table -->
+        <div class="theme-card rounded-2xl p-6 shadow-xl overflow-hidden">
+            <h3 class="text-lg font-bold mb-4">Recent Orders List</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-800 opacity-75">
+                            <th class="p-3">Customer Name</th>
+                            <th class="p-3">Phone</th>
+                            <th class="p-3">City</th>
+                            <th class="p-3">Address</th>
+                            <th class="p-3">Order Details</th>
+                            <th class="p-3">Total</th>
+                            <th class="p-3">Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-table-body">
+                        <tr><td colspan="7" class="text-center py-6 opacity-50">Loading orders...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // حماية الداشبورد: كلمة السر لا تظهر أثناء الكتابة
+        const adminPassword = "123"; // غيّر كلمة السر هنا
+        const loginScreen = document.getElementById('login-screen');
+        const dashboardContent = document.getElementById('dashboard-content');
+        const passwordInput = document.getElementById('password-input');
+        const loginButton = document.getElementById('login-button');
+        const loginError = document.getElementById('login-error');
+
+        function checkPassword() {
+            if (passwordInput.value === adminPassword) {
+                loginScreen.classList.add('hidden');
+                dashboardContent.classList.remove('hidden');
+                fetchDashboardData();
+            } else {
+                passwordInput.value = '';
+                loginError.classList.remove('hidden');
+                passwordInput.focus();
+            }
+        }
+
+        loginButton.addEventListener('click', checkPassword);
+        passwordInput.addEventListener('keydown', event => {
+            if (event.key === 'Enter') checkPassword();
+        });
+        passwordInput.focus();
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            }[char]));
+        }
+
+        function fetchDashboardData() {
+            const orders = JSON.parse(localStorage.getItem('vessens_orders') || '[]');
+            let totalRev = 0;
+            const tbody = document.getElementById('orders-table-body');
+            tbody.innerHTML = '';
+            document.getElementById('total-orders').textContent = orders.length;
+
+            if (orders.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-6 opacity-50">No orders found yet.</td></tr>`;
+                document.getElementById('total-revenue').textContent = '0 EGP';
+                return;
+            }
+
+            orders.forEach(order => {
+                totalRev += Number(order.total_price || 0);
+                const dateFormatted = new Date(order.created_at).toLocaleString();
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-gray-800 hover:bg-white/5 transition-colors";
+                tr.innerHTML = `
+                    <td class="p-3 font-bold">${escapeHtml(order.customer_name)}</td>
+                    <td class="p-3">${escapeHtml(order.customer_phone)}</td>
+                    <td class="p-3">${escapeHtml(order.city)}</td>
+                    <td class="p-3 text-xs">${escapeHtml(order.address)}</td>
+                    <td class="p-3 whitespace-pre-line text-xs opacity-90">${escapeHtml(order.items)}</td>
+                    <td class="p-3 font-bold gold-text">${Number(order.total_price || 0)} EGP</td>
+                    <td class="p-3 text-xs opacity-60">${dateFormatted}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            document.getElementById('total-revenue').textContent = totalRev + ' EGP';
+        }
+
+        function resetOrders() {
+            const orders = JSON.parse(localStorage.getItem('vessens_orders') || '[]');
+
+            if (orders.length === 0) {
+                alert('لا يوجد طلبات لمسحها.');
+                return;
+            }
+
+            const confirmed = confirm('هل أنت متأكد؟ سيتم حذف كل الطلبات من الداشبورد ولا يمكن استرجاعها.');
+            if (!confirmed) return;
+
+            localStorage.removeItem('vessens_orders');
+            fetchDashboardData();
+        }
+
+        window.addEventListener('storage', event => {
+            if (event.key === 'vessens_orders') fetchDashboardData();
+        });
+    </script>
+</body>
+</html>
